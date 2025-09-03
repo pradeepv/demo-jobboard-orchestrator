@@ -1,14 +1,13 @@
 package dev.demo.jobboard.orchestrator.workflow.impl;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import dev.demo.jobboard.orchestrator.activity.McpActivities;
-import dev.demo.jobboard.orchestrator.activity.StreamActivities;
+import dev.demo.jobboard.orchestrator.activity.McpActivities.PageResult;
+import dev.demo.jobboard.orchestrator.activity.McpActivities.PostingSummary;
 import dev.demo.jobboard.orchestrator.workflow.CrawlWorkflow;
-import dev.demo.jobboard.orchestrator.workflow.model.CrawlRequest;
-import dev.demo.jobboard.orchestrator.workflow.model.JobPosting;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.workflow.Workflow;
 
@@ -17,42 +16,49 @@ public class CrawlWorkflowImpl implements CrawlWorkflow {
   private final McpActivities mcp = Workflow.newActivityStub(
       McpActivities.class,
       ActivityOptions.newBuilder()
-          .setStartToCloseTimeout(Duration.ofSeconds(15))
-          .build());
-
-  private final StreamActivities stream = Workflow.newActivityStub(
-      StreamActivities.class,
-      ActivityOptions.newBuilder()
-          .setStartToCloseTimeout(Duration.ofSeconds(10))
-          .build());
+          .setStartToCloseTimeout(Duration.ofSeconds(30))
+          .build()
+  );
 
   @Override
-  public void start(CrawlRequest request) {
-    String reqId = request.getRequestId();
-    List<String> roles = request.getRoles();
-    String query = (roles == null || roles.isEmpty())
-        ? ""
-        : roles.stream().collect(Collectors.joining(", ")); // for the stub
-
-    String[] sources = new String[] {"YC", "HN"};
-    for (String source : sources) {
-      for (int page = 0; page < 2; page++) {
-        List<JobPosting> items = mcp.mcpSearch(source, query, page);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"source\":\"").append(source).append("\",\"items\":[");
-        for (int i = 0; i < items.size(); i++) {
-          JobPosting j = items.get(i);
-          sb.append("{\"id\":\"").append(j.getId()).append("\",")
-            .append("\"title\":\"").append(j.getTitle()).append("\",")
-            .append("\"company\":\"").append(j.getCompany()).append("\"}");
-          if (i < items.size() - 1) sb.append(",");
-        }
-        sb.append("]}");
-
-        stream.emit("crawl", reqId, "job_chunk", sb.toString());
-      }
+  public CrawlResult start(CrawlRequest request) {
+    if (request == null) {
+      throw Workflow.wrap(new IllegalArgumentException("CrawlRequest must not be null"));
     }
-    stream.emit("crawl", reqId, "complete", "{}");
+
+    String source = safeTrim(request.source);
+    String query = safeTrim(request.query);
+    int maxItems = request.maxItems > 0 ? request.maxItems : 200;
+    int page = request.startPage > 0 ? request.startPage : 1;
+    int pageSize = 25; // tune as needed
+
+    List<PostingSummary> all = new ArrayList<>(Math.min(maxItems, 256));
+    boolean hasMore = true;
+    int lastPageFetched = page - 1;
+
+    // Use workflowId as requestId so activities can route SSE to req:<workflowId>
+    String requestId = Workflow.getInfo().getWorkflowId();
+
+    while (hasMore && all.size() < maxItems) {
+      PageResult batch = mcp.fetchPage(requestId, source, query, page, pageSize);
+
+      if (batch != null && batch.items != null && !batch.items.isEmpty()) {
+        for (PostingSummary it : batch.items) {
+          if (all.size() >= maxItems) break;
+          all.add(it);
+        }
+      }
+
+      lastPageFetched = batch == null ? page : batch.page;
+      hasMore = batch != null && batch.hasMore && all.size() < maxItems;
+      page = (batch == null ? page : batch.page) + 1;
+    }
+
+    boolean truncated = all.size() >= maxItems && hasMore;
+    return new CrawlResult(all, lastPageFetched, truncated);
+  }
+
+  private static String safeTrim(String s) {
+    return s == null ? "" : s.trim();
   }
 }

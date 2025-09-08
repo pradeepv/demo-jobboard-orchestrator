@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Profile;
 
 import dev.demo.jobboard.orchestrator.activity.CrewActivities;
 import dev.demo.jobboard.orchestrator.activity.McpActivities;
+import dev.demo.jobboard.orchestrator.activity.NotifyActivities;
 import dev.demo.jobboard.orchestrator.activity.StreamActivities;
 import dev.demo.jobboard.orchestrator.activity.impl.CrewActivitiesImpl;
 import dev.demo.jobboard.orchestrator.activity.impl.McpActivitiesImpl;
@@ -25,9 +26,15 @@ public class TemporalConfig {
 
   public static final String TASK_QUEUE = "demo-tq";
 
+  public static final String JOB_BOARD_TASK_QUEUE = "jobboard-tq";
+
   @Bean
-  public WorkflowServiceStubs workflowServiceStubs() {
-    return WorkflowServiceStubs.newLocalServiceStubs();
+  public WorkflowServiceStubs workflowServiceStubs(org.springframework.core.env.Environment env) {
+    String target = env.getProperty("temporal.server", "127.0.0.1:7233");
+    return io.temporal.serviceclient.WorkflowServiceStubs.newServiceStubs(
+      io.temporal.serviceclient.WorkflowServiceStubsOptions.newBuilder()
+      .setTarget(target)
+      .build());  
   }
 
   @Bean
@@ -56,9 +63,18 @@ public class TemporalConfig {
 
   @Bean
   @Profile("worker")
-  public StreamActivities streamActivities() {
-    return new StreamActivitiesImpl();
+  public StreamActivities streamActivities(SseEventBus bus) {
+    return new StreamActivitiesImpl(bus);
   }
+
+  @Bean
+  @Profile("worker")
+  public dev.demo.jobboard.orchestrator.activity.NotifyActivities notifyActivities(
+      org.springframework.core.env.Environment env) {
+    // UI/API base URL where the controller listens
+    String baseUrl = env.getProperty("api.baseUrl", "http://localhost:8082");
+    return new dev.demo.jobboard.orchestrator.activity.impl.NotifyActivitiesImpl(baseUrl);
+}
 
   // Create and start worker(s) only when profile=worker
   @Bean
@@ -67,21 +83,20 @@ public class TemporalConfig {
       WorkflowClient client,
       McpActivities mcpActivities,
       CrewActivities crewActivities,
-      StreamActivities streamActivities
+      StreamActivities streamActivities,
+      NotifyActivities notifyActivities
   ) {
     WorkerFactory factory = WorkerFactory.newInstance(client);
-
-    Worker worker = factory.newWorker(TASK_QUEUE);
-
+    Worker worker = factory.newWorker(JOB_BOARD_TASK_QUEUE);
     worker.registerWorkflowImplementationTypes(
         CrawlWorkflowImpl.class,
         AnalysisWorkflowImpl.class
     );
-
     worker.registerActivitiesImplementations(
         mcpActivities,
         crewActivities,
-        streamActivities
+        streamActivities,
+        notifyActivities
     );
 
     factory.start();

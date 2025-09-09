@@ -16,6 +16,19 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 
+import dev.demo.jobboard.orchestrator.config.McpConfig;
+
+/**
+ * Alternative REST controller for direct MCP server execution.
+ * Bypasses Temporal workflows for direct MCP process communication.
+ * 
+ * Routes:
+ * - POST /api/local/crawl - Start MCP process directly
+ * - GET /api/local/stream/{runId} - Stream MCP output via SSE
+ * - DELETE /api/local/crawl/{runId} - Stop MCP process
+ * 
+ * Note: This provides a fallback/debug path. Production should use WorkflowController.
+ */
 @RestController
 @RequestMapping("/api/local")
 public class McpRunnerController {
@@ -27,9 +40,11 @@ public class McpRunnerController {
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool();
 
     private final ObjectMapper objectMapper;
+    private final McpConfig mcpConfig;
 
-    public McpRunnerController(ObjectMapper objectMapper) {
+    public McpRunnerController(ObjectMapper objectMapper, McpConfig mcpConfig) {
         this.objectMapper = objectMapper;
+        this.mcpConfig = mcpConfig;
     }
 
     // POST /api/local/crawl launches Python and returns runId + sseUrl
@@ -48,14 +63,14 @@ public class McpRunnerController {
         log.info("[{}] Starting local crawl: sources={}, keywords='{}', location='{}', remoteOnly={}, maxPages={}, perSourceLimit={}, json={}",
                 runId, sources, keywords, location, remoteOnly, maxPages, perSourceLimit, json);
 
-        // Resolve paths: adjust if your repo layout is different
-        Path cwd = Path.of(System.getProperty("user.dir")).resolve("../mcp-jobboard").normalize();
-        Path python = cwd.resolve(".venv/bin/python"); // macOS/Linux venv
+        // Resolve paths from configuration
+        Path cwd = Path.of(mcpConfig.getResolvedWorkingDirectory());
+        Path python = Path.of(mcpConfig.getFullCommand());
 
         List<String> cmd = new ArrayList<>();
         cmd.add(python.toString());
         cmd.add("-u");
-        cmd.add("main.py");
+        cmd.add(mcpConfig.getMainScript());
         if (StringUtils.hasText(sources)) {
             cmd.add("--sources"); cmd.add(sources);
         }

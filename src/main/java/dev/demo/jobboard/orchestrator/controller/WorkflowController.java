@@ -25,6 +25,14 @@ import dev.demo.jobboard.orchestrator.workflow.CrawlWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 
+/**
+ * Main REST controller for Temporal workflow operations.
+ * Handles job crawling through Temporal workflows with MCP activities.
+ * 
+ * Routes:
+ * - POST /api/crawl - Start crawling workflow via Temporal
+ * - GET /api/stream/{requestId} - Stream workflow progress via SSE
+ */
 @RestController
 @RequestMapping("/api")
 public class WorkflowController {

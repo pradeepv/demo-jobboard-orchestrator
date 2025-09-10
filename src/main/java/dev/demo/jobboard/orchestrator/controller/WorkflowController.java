@@ -22,6 +22,8 @@ import dev.demo.jobboard.orchestrator.config.TemporalConfig;
 import dev.demo.jobboard.orchestrator.sse.SseEventBus;
 import dev.demo.jobboard.orchestrator.util.Channels;
 import dev.demo.jobboard.orchestrator.workflow.CrawlWorkflow;
+import dev.demo.jobboard.orchestrator.workflow.AnalysisWorkflow;
+import dev.demo.jobboard.orchestrator.workflow.model.AnalysisRequest;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 
@@ -196,5 +198,48 @@ public class WorkflowController {
         }
 
         return Map.of("ok", true, "requestId", requestId, "source", source, "done", done, "expected", expected);
+    }
+
+    @PostMapping(path = "/analysis", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> startAnalysis(@RequestBody Map<String, Object> body) {
+        String requestId = "analysis-" + UUID.randomUUID();
+        String channel = Channels.forRequest(requestId);
+        
+        @SuppressWarnings("unchecked")
+        List<String> jobIds = (List<String>) body.getOrDefault("jobIds", List.of());
+        
+        @SuppressWarnings("unchecked")
+        Map<String, Object> userProfile = (Map<String, Object>) body.getOrDefault("userProfile", Map.of());
+        String resumeText = userProfile.getOrDefault("name", "Demo User") + " - " + 
+                          userProfile.getOrDefault("experience", "5 years experience");
+        
+        log.debug("startAnalysis: requestId={} channel={} jobIds={}", requestId, channel, jobIds);
+
+        // Emit analysis start marker for the UI
+        bus.publish(channel, "analysis", Map.of(
+            "kind", "analysisStart",
+            "payload", Map.of(
+                "jobIds", jobIds,
+                "requestId", requestId,
+                "ts", Instant.now().toString()
+            )
+        ));
+
+        // Start the analysis workflow
+        WorkflowOptions opts = WorkflowOptions.newBuilder()
+            .setTaskQueue(TemporalConfig.JOB_BOARD_TASK_QUEUE)
+            .setWorkflowId(requestId)
+            .build();
+
+        AnalysisWorkflow analysisStub = workflowClient.newWorkflowStub(AnalysisWorkflow.class, opts);
+        AnalysisRequest analysisReq = new AnalysisRequest(requestId, resumeText, jobIds);
+
+        WorkflowClient.start(analysisStub::start, analysisReq);
+
+        return Map.of(
+            "requestId", requestId,
+            "sseUrl", "/api/stream/" + requestId,
+            "status", "started"
+        );
     }
 }

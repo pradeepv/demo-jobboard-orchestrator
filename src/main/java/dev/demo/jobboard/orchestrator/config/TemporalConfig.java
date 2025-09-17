@@ -24,8 +24,6 @@ import io.temporal.worker.WorkerFactory;
 @Configuration
 public class TemporalConfig {
 
-  public static final String TASK_QUEUE = "demo-tq";
-
   public static final String JOB_BOARD_TASK_QUEUE = "jobboard-tq";
 
   @Bean
@@ -42,12 +40,18 @@ public class TemporalConfig {
     return WorkflowClient.newInstance(service);
   }
 
-  // Provide an McpClient bean (replace with real implementation if available)
+  // Provide an McpClient bean; choose stub or process based on config
   @Bean
-  public McpClient mcpClient() {
-    return new McpClientStub();
+  public McpClient mcpClient(McpConfig cfg) {
+    if (cfg.isEnableDirectExecution()) {
+      // Use the process-backed client
+      return new dev.demo.jobboard.orchestrator.mcp.McpClientProcess(cfg);
+    } else {
+      // Default stub
+      return new McpClientStub();
+    }
   }
-
+  
   // Worker-only beans
   @Bean
   @Profile("worker")

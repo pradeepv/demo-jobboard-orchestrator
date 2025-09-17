@@ -7,4 +7,7 @@ import io.temporal.activity.ActivityMethod;
 public interface StreamActivities {
   @ActivityMethod
   void emit(String channel, String requestId, String type, String jsonPayload);
+  
+  @ActivityMethod
+  void emitObj(String channel, String requestId, String type, java.util.Map<String, Object> payload);
 }

@@ -12,7 +12,38 @@ public interface McpActivities {
   @ActivityMethod
   PageResult fetchPage(String requestId, String source, String query, int page, int pageSize);
 
-  // Your PostingSummary was referenced from this package; reusing the signature you mentioned
+  // NEW: Parse a job URL into structured metadata/details
+  @ActivityMethod
+  ParsedJob parseJobUrl(String requestId, String url);
+
+  // DTOs
+
+  // Minimal ParsedJob DTO (extensible later)
+  public static final class ParsedJob {
+    public String url;
+    public String title;
+    public String company;
+    public String location;
+    public String description;
+    public String source;
+    public String salary;
+    public String team;
+
+    public ParsedJob() {}
+
+    public ParsedJob(String url, String title, String company, String location, String description,
+                     String source, String salary, String team) {
+      this.url = url;
+      this.title = title;
+      this.company = company;
+      this.location = location;
+      this.description = description;
+      this.source = source;
+      this.salary = salary;
+      this.team = team;
+    }
+  }
+
   public static final class PostingSummary {
     public String id;
     public String title;

@@ -1,17 +1,17 @@
 package dev.demo.jobboard.orchestrator.workflow.impl;
 
-import dev.demo.jobboard.orchestrator.workflow.AnalysisWorkflow;
-import dev.demo.jobboard.orchestrator.workflow.model.AnalysisRequest;
-import dev.demo.jobboard.orchestrator.activity.CrewActivities;
-import dev.demo.jobboard.orchestrator.activity.StreamActivities;
-import dev.demo.jobboard.orchestrator.activity.NotifyActivities;
-import io.temporal.activity.ActivityOptions;
-import io.temporal.workflow.Workflow;
-import io.temporal.common.RetryOptions;
-
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+
+import dev.demo.jobboard.orchestrator.activity.CrewActivities;
+import dev.demo.jobboard.orchestrator.activity.NotifyActivities;
+import dev.demo.jobboard.orchestrator.activity.StreamActivities;
+import dev.demo.jobboard.orchestrator.workflow.AnalysisWorkflow;
+import dev.demo.jobboard.orchestrator.workflow.model.AnalysisRequest;
+import io.temporal.activity.ActivityOptions;
+import io.temporal.common.RetryOptions;
+import io.temporal.workflow.Workflow;
 
 public class AnalysisWorkflowImpl implements AnalysisWorkflow {
 
@@ -42,39 +42,48 @@ public class AnalysisWorkflowImpl implements AnalysisWorkflow {
     String requestId = request.getRequestId();
     List<String> jobIds = request.getJobIds();
     String resumeText = request.getResumeText();
-    
-    logger.info("Starting analysis for requestId={} ({} jobIds)", requestId, jobIds.size());
 
+    String channel = "req:" + requestId;
+    logger.info("Starting analysis for requestId={} ({} jobIds)", requestId, jobIds.size());
+    Workflow.sleep(Duration.ofSeconds(30));
     try {
-      // Step 1: Send analysis start event
-      stream.emit("req:" + requestId, requestId, "analysis", Map.of(
+      // Worker-side start marker (distinct from controller's analysisStart)
+      stream.emitObj(channel, requestId, "analysis", Map.of(
+          "kind", "analysisStartWorker",
+          "stage", "starting",
+          "message", "Worker started analysis workflow",
+          "totalJobs", jobIds.size()
+      ));
+
+      // Progress: starting
+      stream.emitObj(channel, requestId, "analysis", Map.of(
           "kind", "analysisProgress",
           "stage", "starting",
           "message", "Beginning job analysis",
           "totalJobs", jobIds.size()
       ));
 
-      // Step 2: Analyze each job
+      // Analyze each job
       double totalScore = 0.0;
       int analyzedCount = 0;
       StringBuilder insights = new StringBuilder();
-      
+
       for (String jobId : jobIds) {
         logger.info("Analyzing job: {}", jobId);
-        
+
         // Mock job data - in real implementation, you'd fetch from database
         String jobTitle = "Software Engineer";
         String company = "Tech Company";
-        
+
         // Analyze the job fit
         CrewActivities.AnalysisResult result = crew.analyze(resumeText, jobId, jobTitle, company);
-        
+
         totalScore += result.getScore();
         analyzedCount++;
         insights.append("Job ").append(jobId).append(": ").append(result.getRationale()).append("\n");
-        
+
         // Send progress update
-        stream.emit("req:" + requestId, requestId, "analysis", Map.of(
+        stream.emitObj(channel, requestId, "analysis", Map.of(
             "kind", "jobAnalyzed",
             "jobId", jobId,
             "score", result.getScore(),
@@ -84,21 +93,20 @@ public class AnalysisWorkflowImpl implements AnalysisWorkflow {
         ));
       }
 
-      // Step 3: Generate final recommendations
-      double avgScore = totalScore / analyzedCount;
-      
-      stream.emit("req:" + requestId, requestId, "analysis", Map.of(
+      // Generate final recommendations
+      double avgScore = analyzedCount == 0 ? 0.0 : totalScore / analyzedCount;
+
+      stream.emitObj(channel, requestId, "analysis", Map.of(
           "kind", "generatingResume",
           "stage", "resume_generation",
           "message", "Generating tailored resume and cover letter"
       ));
-      
-      // Simulate resume/cover letter generation
+
       String generatedResume = generateResume(resumeText, insights.toString(), avgScore);
       String generatedCoverLetter = generateCoverLetter(resumeText, insights.toString());
-      
-      // Step 4: Send final results
-      stream.emit("req:" + requestId, requestId, "analysis", Map.of(
+
+      // Final results
+      stream.emitObj(channel, requestId, "analysis", Map.of(
           "kind", "analysisComplete",
           "stage", "complete",
           "results", Map.of(
@@ -112,24 +120,27 @@ public class AnalysisWorkflowImpl implements AnalysisWorkflow {
               )
           )
       ));
-      
-      // Complete the workflow
-      notify.completed(requestId);
+
+      // Notify API to close the SSE stream for this analysis request
+      notify.sourceComplete(requestId, "analysis");
       logger.info("Analysis completed for requestId={}", requestId);
-      
+
     } catch (Exception e) {
       logger.error("Analysis failed for requestId={}: {}", requestId, e.getMessage(), e);
-      
-      stream.emit("req:" + requestId, requestId, "analysis", Map.of(
+
+      stream.emitObj(channel, requestId, "analysis", Map.of(
           "kind", "analysisError",
           "stage", "error",
           "error", e.getMessage()
       ));
-      
+
+      // Still notify completion endpoint? Typically no; leave stream open for operator to see error,
+      // but you may also choose to close:
+      // notify.sourceComplete(requestId, "analysis");
       throw e;
     }
   }
-  
+
   private String generateResume(String originalResume, String insights, double avgScore) {
     return "TAILORED RESUME\n\n" +
            "Based on your profile and job analysis:\n" +
@@ -140,7 +151,7 @@ public class AnalysisWorkflowImpl implements AnalysisWorkflow {
            "• Tailored keywords included\n\n" +
            "INSIGHTS:\n" + insights;
   }
-  
+
   private String generateCoverLetter(String resumeText, String insights) {
     return "TAILORED COVER LETTER\n\n" +
            "Dear Hiring Manager,\n\n" +

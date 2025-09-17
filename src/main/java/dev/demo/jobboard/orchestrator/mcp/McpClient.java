@@ -2,11 +2,14 @@ package dev.demo.jobboard.orchestrator.mcp;
 
 import java.util.List;
 
+import dev.demo.jobboard.orchestrator.dto.JobDetails;
 import dev.demo.jobboard.orchestrator.dto.JobPosting;
 
 public interface McpClient {
-    // Replace with your real signature as needed
     McpPage search(String query, int page, int pageSize);
+
+    // New: fetch single job details by URL via MCP process
+    JobDetails fetchByUrl(String url);
 
     class McpPage {
         public final List<JobPosting> items;

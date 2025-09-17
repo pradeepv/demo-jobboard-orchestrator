@@ -1,34 +1,37 @@
 package dev.demo.jobboard.orchestrator.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
+import java.nio.file.Path;
 
-@Configuration
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
 @ConfigurationProperties(prefix = "mcp")
 public class McpConfig {
 
     /**
-     * Path to the MCP server executable or Python script
+     * Path to the MCP server executable (e.g., Python interpreter).
+     * Example: ../mcp-jobboard/.venv/bin/python
      */
     private String command = "../mcp-jobboard/.venv/bin/python";
 
     /**
-     * Working directory for MCP server execution
+     * Working directory where the MCP main script resides.
+     * Example: ../mcp-jobboard
      */
     private String workingDirectory = "../mcp-jobboard";
 
     /**
-     * Main script file for MCP server
+     * Main script filename to execute.
+     * Example: main.py
      */
     private String mainScript = "main.py";
 
     /**
-     * Timeout for MCP operations in seconds
+     * Timeout for MCP operations in seconds.
      */
     private int timeoutSeconds = 30;
 
     /**
-     * Whether to enable MCP direct execution (bypass Temporal)
+     * Whether to enable MCP direct execution (shell out to Python) vs stub.
      */
     private boolean enableDirectExecution = true;
 
@@ -36,7 +39,6 @@ public class McpConfig {
     public String getCommand() {
         return command;
     }
-
     public void setCommand(String command) {
         this.command = command;
     }
@@ -44,7 +46,6 @@ public class McpConfig {
     public String getWorkingDirectory() {
         return workingDirectory;
     }
-
     public void setWorkingDirectory(String workingDirectory) {
         this.workingDirectory = workingDirectory;
     }
@@ -52,7 +53,6 @@ public class McpConfig {
     public String getMainScript() {
         return mainScript;
     }
-
     public void setMainScript(String mainScript) {
         this.mainScript = mainScript;
     }
@@ -60,7 +60,6 @@ public class McpConfig {
     public int getTimeoutSeconds() {
         return timeoutSeconds;
     }
-
     public void setTimeoutSeconds(int timeoutSeconds) {
         this.timeoutSeconds = timeoutSeconds;
     }
@@ -68,24 +67,27 @@ public class McpConfig {
     public boolean isEnableDirectExecution() {
         return enableDirectExecution;
     }
-
     public void setEnableDirectExecution(boolean enableDirectExecution) {
         this.enableDirectExecution = enableDirectExecution;
     }
 
     /**
-     * Get the full command path for MCP execution
+     * Full command path used to invoke the interpreter/executable.
      */
     public String getFullCommand() {
         return command;
     }
 
     /**
-     * Get the resolved working directory path
+     * Resolve working directory relative to current user.dir if not absolute.
      */
     public String getResolvedWorkingDirectory() {
-        return java.nio.file.Path.of(System.getProperty("user.dir"))
-                .resolve(workingDirectory)
+        Path wd = Path.of(workingDirectory);
+        if (wd.isAbsolute()) {
+            return wd.normalize().toString();
+        }
+        return Path.of(System.getProperty("user.dir"))
+                .resolve(wd)
                 .normalize()
                 .toString();
     }

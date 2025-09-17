@@ -57,3 +57,21 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 [Unreleased]: https://example.com/compare/v1.0.0...HEAD
 [1.0.0]: https://example.com/releases/v1.0.0
+
+## 2.0.0 - 2025-07-17
+
+- Added robust SSE headers and heartbeats to improve reliability across proxies and browsers.
+    - Set Cache-Control: no-cache, no-transform and Connection: keep-alive on /api/stream/* and /api/local/stream/*.
+    - Added initial connected event on subscribe and periodic comment heartbeats (ping …) to keep connections alive.
+  - Introduced SseEventBus with subscription lifecycle management and heartbeat scheduling.
+  - WorkflowController
+    - Stream endpoint now sets SSE headers and delegates to SseEventBus.subscribe(response).
+    - No functional change to workflow start; still publishes initial analysis event.
+  - McpRunnerController
+    - Local stream endpoint now sets SSE headers and emits periodic heartbeats.
+    - Sends an initial connected event upon subscription.
+  - Configuration
+    - Added SseConfig bean to provide a singleton SseEventBus (moveable to existing config package).
+  - Notes
+    - If running behind nginx, disable buffering for SSE routes (proxy_buffering off; add_header X-Accel-Buffering no;).
+    - Ensure server compression excludes text/event-stream.

@@ -128,7 +128,7 @@ public class CrawlWorkflowImpl implements CrawlWorkflow {
       return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(obj);
     } catch (Exception e) {
       // minimal fallback to avoid failing the workflow on serialization errors
-      return "{\"error\":\"json-serialization-failed\"}";
+      return "{"error":"json-serialization-failed"}";
     }
   }
 }

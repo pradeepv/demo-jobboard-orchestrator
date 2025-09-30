@@ -75,7 +75,14 @@ public class McpConfig {
      * Full command path used to invoke the interpreter/executable.
      */
     public String getFullCommand() {
-        return command;
+        Path cmd = Path.of(command);
+        if (cmd.isAbsolute()) {
+            return cmd.normalize().toString();
+        }
+        return Path.of(System.getProperty("user.dir"))
+                .resolve(cmd)
+                .normalize()
+                .toString();
     }
 
     /**

@@ -1,13 +1,11 @@
 package dev.demo.jobboard.orchestrator.config;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
-
+import dev.demo.jobboard.orchestrator.activity.CrawlActivities;
 import dev.demo.jobboard.orchestrator.activity.CrewActivities;
 import dev.demo.jobboard.orchestrator.activity.McpActivities;
 import dev.demo.jobboard.orchestrator.activity.NotifyActivities;
 import dev.demo.jobboard.orchestrator.activity.StreamActivities;
+import dev.demo.jobboard.orchestrator.activity.impl.CrawlActivitiesImpl;
 import dev.demo.jobboard.orchestrator.activity.impl.CrewActivitiesImpl;
 import dev.demo.jobboard.orchestrator.activity.impl.McpActivitiesImpl;
 import dev.demo.jobboard.orchestrator.activity.impl.StreamActivitiesImpl;
@@ -20,6 +18,9 @@ import io.temporal.client.WorkflowClient;
 import io.temporal.serviceclient.WorkflowServiceStubs;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 @Configuration
 public class TemporalConfig {
@@ -27,12 +28,15 @@ public class TemporalConfig {
   public static final String JOB_BOARD_TASK_QUEUE = "jobboard-tq";
 
   @Bean
-  public WorkflowServiceStubs workflowServiceStubs(org.springframework.core.env.Environment env) {
+  public WorkflowServiceStubs workflowServiceStubs(
+    org.springframework.core.env.Environment env
+  ) {
     String target = env.getProperty("temporal.server", "127.0.0.1:7233");
     return io.temporal.serviceclient.WorkflowServiceStubs.newServiceStubs(
       io.temporal.serviceclient.WorkflowServiceStubsOptions.newBuilder()
-      .setTarget(target)
-      .build());  
+        .setTarget(target)
+        .build()
+    );
   }
 
   @Bean
@@ -42,65 +46,70 @@ public class TemporalConfig {
 
   // Provide an McpClient bean; choose stub or process based on config
   @Bean
-  public McpClient mcpClient(McpConfig cfg) {
+  public McpClient mcpClient(McpConfig cfg, SseEventBus bus) {
     if (cfg.isEnableDirectExecution()) {
       // Use the process-backed client
-      return new dev.demo.jobboard.orchestrator.mcp.McpClientProcess(cfg);
+      return new dev.demo.jobboard.orchestrator.mcp.McpClientProcess(cfg, bus);
     } else {
       // Default stub
       return new McpClientStub();
     }
   }
-  
-  // Worker-only beans
+
+  // Activity beans - available for both API and worker
   @Bean
-  @Profile("worker")
-  public McpActivities mcpActivities(McpClient mcpClient, SseEventBus bus) {
-    return new McpActivitiesImpl(mcpClient, bus);
+  public McpActivities mcpActivities(McpClient mcpClient) {
+    return new McpActivitiesImpl(mcpClient);
   }
 
   @Bean
-  @Profile("worker")
-  public CrewActivities crewActivities() {
-    return new CrewActivitiesImpl();
+  public CrewActivities crewActivities(SseEventBus bus) {
+    return new CrewActivitiesImpl(bus);
   }
 
   @Bean
-  @Profile("worker")
-  public StreamActivities streamActivities(SseEventBus bus) {
-    return new StreamActivitiesImpl(bus);
+  public CrawlActivities crawlActivity(McpClient mcpClient, SseEventBus bus) {
+    return new CrawlActivitiesImpl(mcpClient, bus);
   }
 
   @Bean
-  @Profile("worker")
+  public StreamActivities streamActivities(SseEventBus eventBus) {
+    return new StreamActivitiesImpl(eventBus);
+  }
+
+  @Bean
   public dev.demo.jobboard.orchestrator.activity.NotifyActivities notifyActivities(
-      org.springframework.core.env.Environment env) {
+    org.springframework.core.env.Environment env
+  ) {
     // UI/API base URL where the controller listens
     String baseUrl = env.getProperty("api.baseUrl", "http://localhost:8082");
-    return new dev.demo.jobboard.orchestrator.activity.impl.NotifyActivitiesImpl(baseUrl);
-}
+    return new dev.demo.jobboard.orchestrator.activity.impl.NotifyActivitiesImpl(
+      baseUrl
+    );
+  }
 
-  // Create and start worker(s) only when profile=worker
+  // Create and start worker(s) - available by default for development
   @Bean
-  @Profile("worker")
   public WorkerFactory workerFactory(
-      WorkflowClient client,
-      McpActivities mcpActivities,
-      CrewActivities crewActivities,
-      StreamActivities streamActivities,
-      NotifyActivities notifyActivities
+    WorkflowClient client,
+    McpActivities mcpActivities,
+    CrewActivities crewActivities,
+    CrawlActivities crawlActivity,
+    StreamActivities streamActivities,
+    NotifyActivities notifyActivities
   ) {
     WorkerFactory factory = WorkerFactory.newInstance(client);
     Worker worker = factory.newWorker(JOB_BOARD_TASK_QUEUE);
     worker.registerWorkflowImplementationTypes(
-        CrawlWorkflowImpl.class,
-        AnalysisWorkflowImpl.class
+      CrawlWorkflowImpl.class,
+      AnalysisWorkflowImpl.class
     );
     worker.registerActivitiesImplementations(
-        mcpActivities,
-        crewActivities,
-        streamActivities,
-        notifyActivities
+      mcpActivities,
+      crewActivities,
+      crawlActivity,
+      streamActivities,
+      notifyActivities
     );
 
     factory.start();

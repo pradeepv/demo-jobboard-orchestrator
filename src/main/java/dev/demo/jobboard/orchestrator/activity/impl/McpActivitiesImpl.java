@@ -1,44 +1,30 @@
 package dev.demo.jobboard.orchestrator.activity.impl;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import dev.demo.jobboard.orchestrator.activity.McpActivities;
 import dev.demo.jobboard.orchestrator.dto.JobPosting;
 import dev.demo.jobboard.orchestrator.mcp.McpClient;
-import dev.demo.jobboard.orchestrator.sse.SseEventBus;
 
 public class McpActivitiesImpl implements McpActivities {
 
   private final McpClient mcp;
-  private final SseEventBus bus;
 
-  public McpActivitiesImpl(McpClient mcp, SseEventBus bus) {
+  public McpActivitiesImpl(McpClient mcp) {
     this.mcp = mcp;
-    this.bus = bus;
+  }
+
+  @Override
+  public void executeSearch(String requestId, String source, String query, int maxPages, int perSourceLimit) {
+    // Execute the search which will stream results through the event bus
+    mcp.executeSearch(requestId, source, query, maxPages, perSourceLimit);
   }
 
   @Override
   public PageResult fetchPage(String requestId, String source, String query, int page, int pageSize) {
-    String channel = "req:" + requestId;
-
-    bus.publish(channel, "crawl", Map.of(
-        "stage", "startPage",
-        "page", page,
-        "ts", Instant.now().toString()
-    ));
-
-    McpClient.McpPage res = mcp.search(query, page, pageSize);
-
-    Map<String, Object> payload = new HashMap<>();
-    payload.put("stage", "page");
-    payload.put("page", page);
-    payload.put("count", res.items == null ? 0 : res.items.size());
-    payload.put("hasMore", res.hasMore);
-    payload.put("ts", Instant.now().toString());
-    bus.publish(channel, "crawl", payload);
+    // For backward compatibility
+    McpClient.McpPage res = mcp.fetchPage(requestId, source, query, page, pageSize);
 
     java.util.List<PostingSummary> items = res.items == null
         ? java.util.Collections.emptyList()
@@ -49,18 +35,7 @@ public class McpActivitiesImpl implements McpActivities {
 
   @Override
   public ParsedJob parseJobUrl(String requestId, String url) {
-    String channel = "req:" + requestId;
-
-    // Emit start parse event
-    bus.publish(channel, "crawl", Map.of(
-        "stage", "parseStart",
-        "url", url,
-        "ts", Instant.now().toString()
-    ));
-
-    // Since McpClient currently doesn’t expose a parse-by-URL method,
-    // provide a minimal stub that extracts best-effort metadata from the URL.
-    // This is safe, testable, and can be upgraded once McpClient supports fetch-by-URL.
+    // Placeholder implementation
     ParsedJob parsed = new ParsedJob();
     parsed.url = url;
     parsed.source = inferSource(url);
@@ -70,16 +45,6 @@ public class McpActivitiesImpl implements McpActivities {
     parsed.salary = null;
     parsed.team = null;
     parsed.description = "Description unavailable (stub).";
-
-    // Emit parsed event
-    bus.publish(channel, "crawl", Map.of(
-        "stage", "parsed",
-        "url", url,
-        "title", parsed.title,
-        "company", parsed.company,
-        "source", parsed.source,
-        "ts", Instant.now().toString()
-    ));
 
     return parsed;
   }

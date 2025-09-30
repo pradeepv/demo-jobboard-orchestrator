@@ -16,15 +16,15 @@ public interface CrawlWorkflow {
   CrawlResult start(CrawlRequest request);
 
   final class CrawlRequest {
-    public String source;   // e.g., "yc", "hn", "lever", "ashby"
+    public List<String> sources;   // e.g., "yc", "hn", "lever", "ashby"
     public String query;    // e.g., "platform engineer"
     public int maxItems;    // cap results to keep history small
     public int startPage;   // optional, defaults to 1
 
     public CrawlRequest() {}
 
-    public CrawlRequest(String source, String query, int maxItems, int startPage) {
-      this.source = source;
+    public CrawlRequest(List<String> sources, String query, int maxItems, int startPage) {
+      this.sources = sources;
       this.query = query;
       this.maxItems = maxItems;
       this.startPage = startPage;
@@ -32,13 +32,14 @@ public interface CrawlWorkflow {
 
     @Override
     public String toString() {
-      return "CrawlRequest{" +
-          "source='" + source + '\'' +
-          ", query='" + query + '\'' +
-          ", maxItems=" + maxItems +
-          ", startPage=" + startPage +
+      return "CrawlRequest{"
+          + "sources=" + sources + ", "
+          + "query='" + query + "'" + ", "
+          + "maxItems=" + maxItems + ", "
+          + "startPage=" + startPage + 
           '}';
     }
+
   }
 
   final class CrawlResult {

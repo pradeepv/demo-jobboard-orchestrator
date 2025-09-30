@@ -56,7 +56,7 @@ public class SseEventBus {
             response.setHeader("Cache-Control", "no-cache, no-transform");
             response.setHeader("Connection", "keep-alive");
             // If you have a reverse proxy, adding this can help:
-            // response.setHeader("X-Accel-Buffering", "no"); // nginx
+            response.setHeader("X-Accel-Buffering", "no"); // nginx
         }
 
         long timeoutMs = emitterTimeout.toMillis();
@@ -73,7 +73,7 @@ public class SseEventBus {
         });
         emitter.onTimeout(() -> {
             remove(channel, emitter);
-            log.info("SSE timeout: channel={} subscribersNow={}", channel, size(channel));
+            log.info("SSE completion: channel={} subscribersNow={}", channel, size(channel));
         });
         emitter.onError((ex) -> {
             remove(channel, emitter);
@@ -108,6 +108,40 @@ public class SseEventBus {
 
         log.info("SSE subscribed: channel={} subscribersNow={}", channel, size(channel));
         return emitter;
+    }
+    
+    /**
+     * Attach an existing SseEmitter to a specific channel to receive events
+     */
+    public void attachEmitter(String channel, SseEmitter emitter) {
+        Objects.requireNonNull(channel, "channel");
+        Objects.requireNonNull(emitter, "emitter");
+
+        subscribers.computeIfAbsent(channel, k -> new CopyOnWriteArraySet<>()).add(emitter);
+
+        // Set up lifecycle handlers for this externally created emitter
+        emitter.onCompletion(() -> {
+            remove(channel, emitter);
+            log.info("SSE completion: channel={} subscribersNow={}", channel, size(channel));
+        });
+        emitter.onTimeout(() -> {
+            remove(channel, emitter);
+            log.info("SSE timeout: channel={} subscribersNow={}", channel, size(channel));
+        });
+        emitter.onError((ex) -> {
+            remove(channel, emitter);
+            log.debug("SSE error: channel={} err={}", channel, ex.toString());
+        });
+
+        log.info("SSE emitter attached: channel={} subscribersNow={}", channel, size(channel));
+    }
+    
+    /**
+     * Remove an SseEmitter from a specific channel
+     */
+    public void unsubscribe(String channel, SseEmitter emitter) {
+        remove(channel, emitter);
+        log.info("SSE emitter unsubscribed: channel={} subscribersNow={}", channel, size(channel));
     }
 
     public void publish(String channel, String eventName, Object payload) {

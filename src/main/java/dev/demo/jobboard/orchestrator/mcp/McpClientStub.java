@@ -12,7 +12,18 @@ import dev.demo.jobboard.orchestrator.dto.JobPosting;
 public class McpClientStub implements McpClient {
 
     @Override
-    public McpPage search(String query, int page, int pageSize) {
+    public void executeSearch(String requestId, String source, String query, int maxPages, int perSourceLimit) {
+        // Stub implementation - in real implementation this would stream results through the event bus
+        // For now, we'll just simulate a delay to represent the search process
+        try {
+            Thread.sleep(1000); // Simulate processing time
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Override
+    public McpPage fetchPage(String requestId, String source, String query, int page, int pageSize) {
         int maxPages = 5;
         if (page > maxPages) {
             return new McpPage(List.of(), false);
@@ -47,7 +58,7 @@ public class McpClientStub implements McpClient {
             String lastSeg = path.endsWith("/") ? path.substring(0, Math.max(0, path.length() - 1)) : path;
             int idx = lastSeg.lastIndexOf('/');
             String slug = idx >= 0 ? lastSeg.substring(idx + 1) : lastSeg;
-            String[] parts = host.split("\\.");
+            String[] parts = host.split("\\\\.");
             String company = parts.length >= 2 ? parts[parts.length - 2] : host;
 
             return new JobDetails(
